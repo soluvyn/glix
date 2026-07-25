@@ -12,7 +12,8 @@ static struct {
     int inject;
 } g_app;
 
-static ZygiskApi *g_api;
+static ZygiskApi g_api_val;
+static ZygiskApi *g_api = &g_api_val;
 static JNIEnv *g_env;
 
 static void set_static_string_field(JNIEnv *env, jclass clazz, const char *fieldName, jstring value) {
@@ -60,8 +61,14 @@ static void inject_build(JNIEnv *env, const char *pkg_name, const char *model, c
 
 static void pre_app_specialize(ModuleBase *self, AppSpecializeArgs *args) {
     JNIEnv *env = g_env;
+    if (env == NULL || args == NULL || args->nice_name == NULL || *args->nice_name == NULL) {
+        return;
+    }
 
     const char *process = (*env)->GetStringUTFChars(env, *args->nice_name, NULL);
+    if (process == NULL) {
+        return;
+    }
     snprintf(g_app.name, sizeof(g_app.name), "%s", process);
 
     g_app.inject = (strstr(process, "com.google.android.apps.photos") != NULL) ||
