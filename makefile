@@ -1,26 +1,21 @@
-ABI      := arm64-v8a
-PLATFORM := android-21
-ID       := glix
-VER  := 1.2.0
-BUILD    := build
-MODULE   := module
-ZIP      := $(ID)-$(VER).zip
-SO       := $(BUILD)/lib$(ID).so
+CC := $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+CFLAGS := -shared -Os -s -fvisibility=hidden -std=c11 -llog
 
-$(BUILD)/Makefile:
-	cmake -B $(BUILD) \
-		-DCMAKE_TOOLCHAIN_FILE=$(NDK)/build/cmake/android.toolchain.cmake \
-		-DANDROID_ABI=$(ABI) \
-		-DANDROID_PLATFORM=$(PLATFORM)
+VERSION := $(shell sed -n 's/^version=//p' module/module.prop)
+ZIP := glix-$(VERSION).zip
+SO := module/zygisk/arm64-v8a.so
 
-$(SO): $(BUILD)/Makefile
-	cmake --build $(BUILD)
+all: $(ZIP)
 
-zip: $(SO)
-	cmake -E copy $(SO) $(MODULE)/zygisk/$(ABI).so
-	cd $(MODULE) && zip -9 -Z deflate -r ../$(ZIP) .
-	rm -f $(MODULE)/zygisk/$(ABI).so
-	rm -rf $(BUILD)
+$(SO): glix.c zygisk.h
+	mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(ZIP): module/module.prop module/system/product/etc/sysconfig/glix.xml $(SO)
+	rm -f $@
+	cd module && zip -r ../$@ module.prop system zygisk
 
 clean:
-	rm -rf $(ZIP)
+	rm -rf module/zygisk $(ZIP)
+
+.PHONY: all clean
