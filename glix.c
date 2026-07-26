@@ -92,10 +92,8 @@ static void postAppSpecialize(void *impl, const struct zygisk_app_specialize_arg
             return;
         }
 
-        spoof_field(g_env, build_class, "BRAND", "Google");
+        spoof_field(g_env, build_class, "BRAND", "google");
         spoof_field(g_env, build_class, "MANUFACTURER", "Google");
-        spoof_field(g_env, build_class, "PRODUCT", "marlin");
-        spoof_field(g_env, build_class, "DEVICE", "marlin");
         spoof_field(g_env, build_class, "MODEL", "Pixel XL");
         spoof_field(g_env, build_class, "FINGERPRINT", "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys");
 
