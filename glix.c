@@ -1,12 +1,7 @@
 #include <jni.h>
 #include <string.h>
-#include <android/log.h>
 
 #include "zygisk.h"
-
-#define LOG_TAG "glix"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 
 static bool g_should_inject = false;
 static char g_process_name[256] = {0};
@@ -41,7 +36,6 @@ static void spoof_field(JNIEnv *env, jclass clazz, const char *field_name, const
 
 static void preAppSpecialize(void *impl, struct zygisk_app_specialize_args *args) {
     if (g_env == NULL || args == NULL) {
-        LOGW("JNIEnv or AppSpecializeArgs is null");
         return;
     }
 
@@ -64,8 +58,7 @@ static void preAppSpecialize(void *impl, struct zygisk_app_specialize_args *args
 
     (*g_env)->ReleaseStringUTFChars(g_env, nice_name_jstr, nice_name);
 
-    if (strstr(g_process_name, "com.google.android.apps.photos") != NULL ||
-        strstr(g_process_name, "com.google.android.gms") != NULL) {
+    if (strstr(g_process_name, "com.google.android.apps.photos") != NULL) {
         g_should_inject = true;
     } else {
         g_should_inject = false;
@@ -75,7 +68,6 @@ static void preAppSpecialize(void *impl, struct zygisk_app_specialize_args *args
 static void postAppSpecialize(void *impl, const struct zygisk_app_specialize_args *args) {
     if (g_should_inject) {
         if (g_env == NULL) {
-            LOGW("JNIEnv is null in postAppSpecialize");
             if (g_api != NULL) {
                 g_api->setOption(g_api->impl, ZYGISK_DLCLOSE_MODULE_LIBRARY);
             }
@@ -84,7 +76,6 @@ static void postAppSpecialize(void *impl, const struct zygisk_app_specialize_arg
 
         jclass build_class = (*g_env)->FindClass(g_env, "android/os/Build");
         if (build_class == NULL) {
-            LOGW("Failed to find android.os.Build class for %s", g_process_name);
             (*g_env)->ExceptionClear(g_env);
             if (g_api != NULL) {
                 g_api->setOption(g_api->impl, ZYGISK_DLCLOSE_MODULE_LIBRARY);
@@ -101,7 +92,6 @@ static void postAppSpecialize(void *impl, const struct zygisk_app_specialize_arg
             (*g_env)->ExceptionClear(g_env);
         }
 
-        LOGI("Spoof successful for %s", g_process_name);
     }
 
     if (g_api != NULL) {
