@@ -1,7 +1,7 @@
 ABI      := arm64-v8a
 PLATFORM := android-21
-ID       := gpx
-VER  := 1.1.0
+ID       := glix
+VER  := 1.2.0
 BUILD    := build
 MODULE   := module
 ZIP      := $(ID)-$(VER).zip

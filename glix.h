@@ -4,7 +4,7 @@
 #include <android/log.h>
 
 #ifndef TAG
-#define TAG "gpx"
+#define TAG "glix"
 #endif
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)

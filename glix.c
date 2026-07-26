@@ -3,7 +3,7 @@
 #include <android/log.h>
 
 #include "zygisk.h"
-#include "gpx.h"
+#include "glix.h"
 
 static const char PIXEL_XL_FP[] = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys";
 
