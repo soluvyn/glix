@@ -1,118 +1,130 @@
-#include <stdio.h>
+#include <jni.h>
 #include <string.h>
 #include <android/log.h>
 
 #include "zygisk.h"
-#include "glix.h"
 
-static const char PIXEL_XL_FP[] = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys";
+#define LOG_TAG "glix"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 
-static struct {
-    char name[256];
-    int inject;
-} g_app;
+static bool g_should_inject = false;
+static char g_process_name[256] = {0};
+static struct zygisk_api_table *g_api = NULL;
+static JNIEnv *g_env = NULL;
 
-static ZygiskApi g_api_val;
-static ZygiskApi *g_api = &g_api_val;
-static JNIEnv *g_env;
-
-static void set_static_string_field(JNIEnv *env, jclass clazz, const char *fieldName, jstring value) {
-    jfieldID fieldId = (*env)->GetStaticFieldID(env, clazz, fieldName, "Ljava/lang/String;");
-    if (fieldId != NULL) {
-        (*env)->SetStaticObjectField(env, clazz, fieldId, value);
+static void spoof_field(JNIEnv *env, jclass clazz, const char *field_name, const char *value) {
+    jfieldID field_id = (*env)->GetStaticFieldID(env, clazz, field_name, "Ljava/lang/String;");
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        return;
     }
-}
-
-static void inject_build(JNIEnv *env, const char *pkg_name, const char *model, const char *product, const char *finger) {
-    if (env == NULL) {
-        LOGW("env null, failed to inject build for %s", pkg_name);
+    if (field_id == NULL) {
         return;
     }
 
-    jclass build_class = (*env)->FindClass(env, "android/os/Build");
-    if (build_class == NULL) {
-        LOGW("build_class null, failed to inject build for %s", pkg_name);
+    jstring jval = (*env)->NewStringUTF(env, value);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        return;
+    }
+    if (jval == NULL) {
         return;
     }
 
-    LOGI("inject build for %s with \nPRODUCT:%s \nMODEL:%s \nFINGERPRINT:%s", pkg_name, product, model, finger);
-
-    jstring google_str = (*env)->NewStringUTF(env, "Google");
-    jstring product_str = (*env)->NewStringUTF(env, product);
-    jstring model_str = (*env)->NewStringUTF(env, model);
-    jstring finger_str = (*env)->NewStringUTF(env, finger);
-
-    set_static_string_field(env, build_class, "BRAND", google_str);
-    set_static_string_field(env, build_class, "MANUFACTURER", google_str);
-    set_static_string_field(env, build_class, "PRODUCT", product_str);
-    set_static_string_field(env, build_class, "DEVICE", product_str);
-    set_static_string_field(env, build_class, "MODEL", model_str);
-    set_static_string_field(env, build_class, "FINGERPRINT", finger_str);
-
+    (*env)->SetStaticObjectField(env, clazz, field_id, jval);
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
     }
-
-    (*env)->DeleteLocalRef(env, google_str);
-    (*env)->DeleteLocalRef(env, product_str);
-    (*env)->DeleteLocalRef(env, model_str);
-    (*env)->DeleteLocalRef(env, finger_str);
+    (*env)->DeleteLocalRef(env, jval);
 }
 
-static void pre_app_specialize(ModuleBase *self, AppSpecializeArgs *args) {
-    JNIEnv *env = g_env;
-    if (env == NULL || args == NULL || args->nice_name == NULL || *args->nice_name == NULL) {
+static void preAppSpecialize(void *impl, struct zygisk_app_specialize_args *args) {
+    if (g_env == NULL || args == NULL) {
+        LOGW("JNIEnv or AppSpecializeArgs is null");
         return;
     }
 
-    const char *process = (*env)->GetStringUTFChars(env, *args->nice_name, NULL);
-    if (process == NULL) {
+    if (args->nice_name == NULL || *(args->nice_name) == NULL) {
         return;
     }
-    snprintf(g_app.name, sizeof(g_app.name), "%s", process);
 
-    g_app.inject = (strstr(process, "com.google.android.apps.photos") != NULL) ||
-                    (strstr(process, "com.google.android.gms") != NULL);
-
-    (*env)->ReleaseStringUTFChars(env, *args->nice_name, process);
-}
-
-static void post_app_specialize(ModuleBase *self, const AppSpecializeArgs *args) {
-    if (g_app.inject) {
-        inject_build(g_env, g_app.name, "Pixel XL", "marlin", PIXEL_XL_FP);
+    jstring nice_name_jstr = *(args->nice_name);
+    const char *nice_name = (*g_env)->GetStringUTFChars(g_env, nice_name_jstr, NULL);
+    if (nice_name == NULL) {
+        return;
     }
 
-    zygisk_set_option(g_api, DLCLOSE_MODULE_LIBRARY);
+    size_t name_len = strlen(nice_name);
+    if (name_len >= sizeof(g_process_name)) {
+        name_len = sizeof(g_process_name) - 1;
+    }
+    memcpy(g_process_name, nice_name, name_len);
+    g_process_name[name_len] = '\0';
+
+    (*g_env)->ReleaseStringUTFChars(g_env, nice_name_jstr, nice_name);
+
+    if (strstr(g_process_name, "com.google.android.apps.photos") != NULL ||
+        strstr(g_process_name, "com.google.android.gms") != NULL) {
+        g_should_inject = true;
+    } else {
+        g_should_inject = false;
+    }
 }
 
-typedef struct {
-    long api_version;
-    ModuleBase *impl;
-    void (*preAppSpecialize)(ModuleBase *, AppSpecializeArgs *);
-    void (*postAppSpecialize)(ModuleBase *, const AppSpecializeArgs *);
-    void (*preServerSpecialize)(ModuleBase *, ServerSpecializeArgs *);
-    void (*postServerSpecialize)(ModuleBase *, const ServerSpecializeArgs *);
-} module_abi;
+static void postAppSpecialize(void *impl, const struct zygisk_app_specialize_args *args) {
+    if (g_should_inject) {
+        if (g_env == NULL) {
+            LOGW("JNIEnv is null in postAppSpecialize");
+            if (g_api != NULL) {
+                g_api->setOption(g_api->impl, ZYGISK_DLCLOSE_MODULE_LIBRARY);
+            }
+            return;
+        }
 
-static ModuleBase g_base;
-static module_abi g_abi;
+        jclass build_class = (*g_env)->FindClass(g_env, "android/os/Build");
+        if (build_class == NULL) {
+            LOGW("Failed to find android.os.Build class for %s", g_process_name);
+            (*g_env)->ExceptionClear(g_env);
+            if (g_api != NULL) {
+                g_api->setOption(g_api->impl, ZYGISK_DLCLOSE_MODULE_LIBRARY);
+            }
+            return;
+        }
 
-void zygisk_module_entry(api_table *table, JNIEnv *env) {
-    g_api->tbl = table;
+        spoof_field(g_env, build_class, "BRAND", "Google");
+        spoof_field(g_env, build_class, "MANUFACTURER", "Google");
+        spoof_field(g_env, build_class, "PRODUCT", "marlin");
+        spoof_field(g_env, build_class, "DEVICE", "marlin");
+        spoof_field(g_env, build_class, "MODEL", "Pixel XL");
+        spoof_field(g_env, build_class, "FINGERPRINT", "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys");
+
+        if ((*g_env)->ExceptionCheck(g_env)) {
+            (*g_env)->ExceptionClear(g_env);
+        }
+
+        LOGI("Spoof successful for %s", g_process_name);
+    }
+
+    if (g_api != NULL) {
+        g_api->setOption(g_api->impl, ZYGISK_DLCLOSE_MODULE_LIBRARY);
+    }
+}
+
+static struct zygisk_module_abi g_abi = {
+    .api_version = ZYGISK_API_VERSION,
+    .impl = NULL,
+    .preAppSpecialize = preAppSpecialize,
+    .postAppSpecialize = postAppSpecialize,
+    .preServerSpecialize = NULL,
+    .postServerSpecialize = NULL
+};
+
+__attribute__((visibility("default")))
+void zygisk_module_entry(struct zygisk_api_table *table, JNIEnv *env) {
+    g_api = table;
     g_env = env;
-
-    g_base.preAppSpecialize = pre_app_specialize;
-    g_base.postAppSpecialize = post_app_specialize;
-    g_base.preServerSpecialize = NULL;
-    g_base.postServerSpecialize = NULL;
-    g_base.user_data = NULL;
-
-    g_abi.api_version = ZYGISK_API_VERSION;
-    g_abi.impl = &g_base;
-    g_abi.preAppSpecialize = pre_app_specialize;
-    g_abi.postAppSpecialize = post_app_specialize;
-    g_abi.preServerSpecialize = NULL;
-    g_abi.postServerSpecialize = NULL;
-
-    table->registerModule(table, &g_abi);
+    if (!table->registerModule(table, &g_abi)) {
+        return;
+    }
 }

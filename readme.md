@@ -1,3 +1,17 @@
 # Glix
 
-This module spoofs device info to be that of the Pixel XL device thus providing certain features.
+Zygisk module for APatch that spoofs your device as a Pixel XL (Android 10) for *extra* features in GPhotos.
+
+## Build
+
+Android NDK must be in your `PATH` as is in the makefile
+
+```bash
+make
+```
+
+## Clean
+
+```bash
+make clean
+```
