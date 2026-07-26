@@ -13,7 +13,7 @@ $(SO): glix.c zygisk.h
 
 $(ZIP): module/module.prop module/system/product/etc/sysconfig/glix.xml $(SO)
 	rm -f $@
-	cd module && zip -r ../$@ module.prop system zygisk
+	cd module && zip -9 -Z deflate -r ../$@ module.prop system zygisk
 
 clean:
 	rm -rf module/zygisk $(ZIP)
